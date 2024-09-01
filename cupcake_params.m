@@ -5,9 +5,10 @@ p.testingLocation = testingLocation;
 p.debug = logical(debug);
 p.showInstruct = logical(showInstruct);
 p.showPositionFeedback = logical(showPositionFeedback); 
-p.wedge = 0; % if no wedge, the task is only position estimate without confidence report (for piloting)  
+p.wedge = 1; % if no wedge, the task is only position estimate without confidence report (for piloting)  
 p.photodiode = 1; % draws flickering rectangle in upper left corner 
-p.enforceFix = 0; % only for thresholding and practice
+p.enforceFixITI = 0; % only for thresholding and practice, check fixation between trials
+p.enforceFixCTI = 0; % check fixation between cue and target
 
 %% 
 switch p.testingLocation
@@ -99,7 +100,8 @@ switch p.itiType
 end
 
 p.eyeSlacks = 0.2:0.02:0.4; % min time between regaining fixation and next trial if p.enforceFix
-p.eyeSlackPDF = p.hazardProb.*(1-p.hazardProb).^(0:numel(p.eyeSlacks)-1); % f = p.*(1-p).^x;
+p.eyeSlackHazardProb = 0.2;
+p.eyeSlackPDF = p.eyeSlackHazardProb.*(1-p.eyeSlackHazardProb).^(0:numel(p.eyeSlacks)-1); % f = p.*(1-p).^x;
 
 % stimuli timing (all seconds)
 p.fixDur = 1; % initial fixation 
@@ -186,6 +188,11 @@ p.feedbackEstimationColor = [0 255 0]; % green
 p.points = 0.08; % constant for scaling points (asymptote ~50 deg)
 p.feedbackMessageTreshold = 50; % arcL that shows 'try to make the arc as small as possible' message 
 
+% Instructions
+% instructions involve showing the participant mock stimuli which are
+% scaled down
+p.instrRatio = 0.5;
+
 % Thresholding
 p.threshDegrees = 5;
 
@@ -193,14 +200,20 @@ p.threshDegrees = 5;
 p.nTrialsThresholding = 72;
 p.nStaircases = 2;
 
-p.quest.pThreshold = 0.5;
-p.quest.tGuess = log10(p.gratingContrasts(1));
-p.quest.tGuessSd = 1;
+p.quest.tGuess = log10(0.2);
+p.quest.tGuessSd = 2;
 p.quest.beta = 3.5;
 p.quest.delta = 0.05;
-p.quest.gamma = (2*p.threshDegrees)/360;
-p.quest.grain = 0.01;
-p.quest.range = 1;
+% p.quest.gamma = (2*p.threshDegrees)/360; % p(correct) if participant is guessing. 
+% assume that a randomly guessing participant will guess the cued location
+p.quest.gamma = normcdf(p.threshDegrees/p.sigma) - (normcdf(-p.threshDegrees/p.sigma)); 
+p.quest.grain = 0.02;
+p.quest.range = 10;
+p.quest.pThreshold = 0.5 + 0.5*p.quest.gamma;
+
+% Currently only used for threshold plot
+p.plot.xsize = 1200;
+p.plot.ysize = 800;
 
 %% M/EEG triggers
 p.triggers.fixation = 2^1; %2

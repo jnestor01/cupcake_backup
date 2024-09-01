@@ -13,16 +13,36 @@ function cupcake
 % 07/08/21  kjt, contrast manipulation
 % 04/12/24  kjt, resurrection
 % 06/27/24  kjt, eeg pilot
-   
+
 %% Input 
 % subject 
 subjectID = input('Enter subject ID:  ','s');
 testingLocation = input('Enter testing location (desk, DenBehav):  ','s');
-p.debug = 1; debug = 1; 
+p.debug = 0; debug = 0;
 showInstruct = input('Show instructions? 1-yes 0-no:  ');
 showPositionFeedback = 1; % input('Show position feedback? 1-yes 0-no:  ');
 useTrackball = 0; % input('Mouse or trackball? 1-trackball 0-mouse:  ');
-run = input('Enter run #:  ');
+p = cupcake_params(testingLocation, debug, showInstruct, showPositionFeedback);
+
+run = 'threshold';
+thresholdFile = sprintf('data/%s/%s_%s_%s.mat', subjectID, subjectID, p.expName, run);
+if isfile(thresholdFile)
+    fileID = -1;
+    overwrite = 1;
+    while overwrite
+        fileID = fileID + 1;
+        newfile = sprintf('%s%i', thresholdFile, fileID);
+        if ~isfile(newfile)
+            run = sprintf('threshold%i', fileID);   
+            overwrite = 0;
+        else
+            fileID = fileID + 1;
+        end
+    end
+else
+    fileID = [];
+end
+
 resumeDataset = 0; % input('Resume old dataset? 1-yes 0-no:  ');
 
 % Save options. 
@@ -74,6 +94,10 @@ end
 p.attConds = 1;
 p.nReps = 1;
 p.photodiode = 0;
+p.triggerEEG = 0;
+p.enforceFixITI = 1;
+p.enforceFixCTI
+p.wedge = 0;
 
 %% Initialize stim tracker for MEG
 if p.triggersOn
@@ -101,7 +125,7 @@ end
 
 %% Eye data i/o
 eyeDataDir = 'data/eyedata';
-eyeFile = sprintf('%s_%02d', subjectID, run);
+eyeFile = sprintf('%s_th%i', subjectID, fileID);
 eyeFileFull = sprintf('%s/%s_%s_%s.edf', eyeDataDir, subjectID, p.expName, datestr(now, 'yymmdd'));
 
 % Check to see if this eye file already exists
@@ -113,7 +137,7 @@ end
 %% Display key settings to the experimenter
 fprintf('\nExperiment settings:\n')
 fprintf('subject = %s\n', subjectID)
-fprintf('run = %d\n', run)
+fprintf('run = %s\n', run)
 fprintf('location = %s\n', p.testingLocation)
 fprintf('trackball = %d\n', useTrackball)
 fprintf('debugging = %d\n', p.debug)
@@ -338,7 +362,7 @@ if p.eyeTracking
     % Write subject ID into the edf file
     Eyelink('message', 'BEGIN DESCRIPTIONS');
     Eyelink('message', 'Subject code: %s', subjectID);
-    Eyelink('message', 'Run: %d', run);
+    Eyelink('message', 'Run: %s', run);
     Eyelink('message', 'END DESCRIPTIONS');
     
     % No sounds indicating success of calibration
@@ -358,7 +382,7 @@ if p.eyeTracking
         return
     end
     
-    if p.enforceFix
+    if p.enforceFixITI||p.enforceFixCTI
         eyeRad = round(ang2pix(p.eyeRad, p.screenSize(1), p.screenRes(1), p.viewDist, 'central'));
         fixRect = [cx-eyeRad, cy-eyeRad, cx+eyeRad, cy+eyeRad]; 
         % Start recording
@@ -382,44 +406,74 @@ initTex = Screen('MakeTexture', window, grating*white);
 
 %% Instructions and example target
 if p.showInstruct 
-    nInstruct = 4; % change to read number of images
-    Screen('DrawTexture', window, initTex, []); % draw stim to prevent delay on 1st trial
-    for iInstruct = 1:nInstruct
-        instructPath = sprintf('images/instruct%d.png',iInstruct);
-        instruct = imread(instructPath);
-        instructTex = Screen('MakeTexture', window, instruct);
-        % scale image
-        [s1, s2, s3] = size(instruct);
-        aspectRatio = s2/s1;
-        heightScaler = 1;
-        imageHeights = rect(4).*heightScaler;
-        imageWidths = imageHeights.*aspectRatio;
-        instructRect = [0 0 imageWidths imageHeights];
-        instructCenterRect = CenterRectOnPointd(instructRect, cx, cy);
-        
-        Screen('DrawTexture', window, instructTex, [], instructCenterRect);
-        Screen('Flip', window);
-        pause(1)
-        
-        keyPressed = 0;
-        while ~keyPressed
-            %             if p.useKbQueue
-            %                 [keyIsDown, firstPress] = KbQueueCheck();
-            %                 keyCode = logical(firstPress);
-            %             else
-            %                 [secs, keyCode] = KbWait(devNum);
-            %             end
-            %
-            %             if strcmp(KbName(keyCode),'1!')
-            %                 keyPressed = 1;
-            %             end
-            [x,y,buttons] = GetMouse(window);
-            if any(buttons)
-                keyPressed = keyPressed+1;
-                break
-            end
+
+    upperTextLocation = 1.9;
+    lowerTextLocation = 1.75;
+    instrRatio = p.instrRatio;
+    pInstr = p;
+    pInstr.ecc = pInstr.ecc*instrRatio;
+
+   keyPressed = 0;
+    instructText{1} = ['In this thresholding procedure, we will gradually increment\nthe difficulty of the task by adjusting the contrast of the target.\n' ...
+        'For thresholding, you will only use the dot to estimate the location of the target,\nyou will not have to use the arc as you did in the practice.'];
+    instructText{2} = 'Click to continue';
+
+    DrawFormattedText(window, instructText{1}, 'center', cy-round(ecc*instrRatio*upperTextLocation), [1 1 1]*white);
+    DrawFormattedText(window, instructText{2}, 'center', cy+round(ecc*instrRatio*lowerTextLocation), [1 1 1]*white);
+
+    drawCircles(window, pInstr);
+    drawFixation(window, cx, cy, fixSize*instrRatio, p.fixColor*white);
+
+        instrImage = zeros(round(p.ppd* (p.imSize(1)*2*instrRatio) ));    
+    [~, instrGrating] = rd_aperture(instrImage, p.aperture, gratingRadius, edgeWidth);
+    instrGrating = rescale(instrGrating, 0.5-0.5*p.gratingContrasts(1), 0.5+0.5*p.gratingContrasts(1));
+    instrGrating = rd_aperture(instrGrating, 'gaussian', p.gaussianSD*p.ppd, edgeWidth);
+    instrGratingTex = Screen('MakeTexture', window, instrGrating*white);
+
+    instrTheta = pi/3;
+    instrImRect = floor(CenterRectOnPointd([0 0 size(instrImage)], cx+ecc*cos(instrTheta)*instrRatio, cy+ecc*sin(instrTheta)*instrRatio));
+    Screen('DrawTexture', window, instrGratingTex, [], instrImRect);  
+
+   Screen('Flip', window);
+
+    WaitSecs(0.2);
+
+    while ~keyPressed
+        [x,y,buttons] = GetMouse(window);
+        if any(buttons)
+            keyPressed = keyPressed+1;
+            break
         end
-    end
+    end  
+
+     keyPressed = 0;
+    instructText{1} = ['For thresholding, every trial will have the directional cue.\nRemember that if you don''t see the target on a trial\n' ...
+        'it is okay to use the directional cue to make a best guess.'];
+    instructText{2} = 'Click to continue';
+
+    DrawFormattedText(window, instructText{1}, 'center', cy-round(ecc*instrRatio*upperTextLocation), [1 1 1]*white);
+    DrawFormattedText(window, instructText{2}, 'center', cy+round(ecc*instrRatio*lowerTextLocation), [1 1 1]*white);
+
+    drawCircles(window, pInstr);
+    drawFixation(window, cx, cy, fixSize*instrRatio, p.fixColor*white);
+
+    instrCueTheta = pi/3.8;
+    Screen('DrawLine', window, white, cx + p.cueBuffer*p.ppd*cosd(instrCueTheta), cy + p.cueBuffer*p.ppd*sind(instrCueTheta),...
+        cx + p.cueLength*p.ppd*cosd(instrCueTheta)*instrRatio, cy + p.cueLength*p.ppd*sind(instrCueTheta)*instrRatio, p.strokeWidth);
+
+   Screen('Flip', window);
+
+    WaitSecs(0.2);
+
+    while ~keyPressed
+        [x,y,buttons] = GetMouse(window);
+        if any(buttons)
+            keyPressed = keyPressed+1;
+            break
+        end
+    end  
+
+
 end
 
 % Begin screen
@@ -494,7 +548,7 @@ for iTrial = trialIdx:nTrials
      imRectOval = floor(CenterRectOnPointd(imRect, cx+ecc*cos(theta), cy+ecc*sin(theta)));
 
      % Generate target (Quest)
-     contrast = 10^QuestMean(q(staircase));
+     contrast = min(10^QuestMean(q(staircase)),1);
      if p.debug
         contrast
      end
@@ -673,6 +727,31 @@ for iTrial = trialIdx:nTrials
     if p.photodiode % strcmp(p.testingLocation,'MEG')
         drawPhotodiode(window, [cx cy]*2, p.photodiodeColors(1), 0); % alternate black and white
     end
+
+    %% Check fixation before presenting target
+    isFix = 0;
+    if p.enforceFixCTI
+        eyeSlack_min = p.eyeSlacks(rd_sampleDiscretePDF(p.eyeSlackPDF, 1, 5));
+    else
+        eyeSlack_min = 0;
+    end
+    eyeSlack = 0;
+
+    while ~isFix||GetSecs<timeFix2 + p.fix2Dur + fixTargetISI - 2*p.slack
+        if p.enforceFixCTI
+            isFix = rd_eyeLink('fixcheck', window, {cx, cy, eyeRad});
+            if ~isFix
+                remain = timeFix2 + p.fix2Dur + fixTargetISI - 2*p.slack - GetSecs + eyeSlack;
+                if remain < eyeSlack_min
+                    eyeSlack = eyeSlack_min-remain;
+                end
+            end
+        else
+            isFix = 1;
+        end
+    end
+
+
     timeTarget = Screen('Flip', window, timeFix2 + p.fix2Dur + fixTargetISI - p.slack);
 
     if p.triggersOn
@@ -1014,20 +1093,20 @@ for iTrial = trialIdx:nTrials
 
     %check fixation during ITI before continuing
     isFix = 0;
-    if p.enforceFix
-        eyeSlack_min = p.eyeSlacks(rd_sampleDiscretePDF(p.eyeSlackPDF, 1));
+    if p.enforceFixITI
+        eyeSlack_min = p.eyeSlacks(rd_sampleDiscretePDF(p.eyeSlackPDF, 1, 5));
     else
         eyeSlack_min = 0;
     end
     eyeSlack = 0;
 
-    while ~isFix||getSecs<timeITIstart+iti-p.slack+eyeSlack
-        if p.enforceFix
+    while ~isFix||GetSecs<timeITIstart+iti-p.slack+eyeSlack
+        if p.enforceFixITI
             isFix = rd_eyeLink('fixcheck', window, {cx, cy, eyeRad});
             if ~isFix
                 remain = timeITIstart + iti - p.slack - GetSecs + eyeSlack;
                 if remain < eyeSlack_min
-                    eyeSlack = eyeSlack_max-remain;
+                    eyeSlack = eyeSlack_min-remain;
                 end
             end
         else
@@ -1055,7 +1134,7 @@ for iTrial = trialIdx:nTrials
     trialsPresented.att(iTrial) = trials(iTrial,attIdx); % 1 valid, 0 neutral 
     
     trialsPresented.staircaseIdx(iTrial) = staircase;
-    trialsPresented.contrast(iTrial) = p.gratingContrasts(trials(iTrial, contrastIdx)); 
+    trialsPresented.contrast(iTrial) = contrast; 
     trialsPresented.sf(iTrial) = sf; 
     trialsPresented.theta(iTrial) = theta; % true stimulus position
     trialsPresented.thetaDeg(iTrial) = thetaDeg; % true stimulus position
@@ -1119,7 +1198,7 @@ for iTrial = trialIdx:nTrials
         %% Save data at blocks 
         if saveData
             expt.date = datestr(now,'yyyymmdd_HHMM'); 
-            dataFile = sprintf('data/%s/%s_%s_%s_run%02d.mat', subjectID, subjectID, p.expName, expt.date, run);
+            dataFile = sprintf('data/%s/%s_%s_%s_%s.mat', subjectID, subjectID, p.expName, expt.date, run);
             save(dataFile, 'expt')
             disp('data saved')
         end
@@ -1159,23 +1238,8 @@ expt.exptDur = exptDur; % in min
 %% Analyze and save data
 % Is this redundant with the previous save? 
 if saveData
-    thresholdFile = sprintf('data/%s/%s_%s_threshold_%s.mat', subjectID, subjectID, p.expName);
-    if ~isfile(thresholdFile)
-        save(thresholdFile, 'expt');
-    else
-        fileID = -1;
-        overwrite = 1;
-        while overwrite
-            fileID = fileID + 1;
-            newfile = sprintf('%s_%i', thresholdFile, fileID);
-        if ~isfile(newfile)
-            save(newfile, 'expt');
-            overwrite = 0;
-        else
-            fileID = fileID + 1;
-        end
-        end
-    end
+    thresholdFile = sprintf('data/%s/%s_%s_%s.mat', subjectID, subjectID, p.expName, run);
+    save(thresholdFile, 'expt');
     disp('data saved')
 end
 
@@ -1196,13 +1260,14 @@ if p.triggerEEG
 end
 
 %% Plot staircases
-tiledlayout(1,2);
+threshfig = figure('Position', [0 0 p.plot.xsize p.plot.ysize]);
+tiledlayout(2,2);
 nexttile
 for stairI = 1:p.nStaircases
     leg{stairI} = sprintf('staircase #%i', stairI);
-    trials = trialsPresented.staircaseID == stairI;
+    trials = trialsPresented.staircaseIdx == stairI;
     xs = 1:sum(trials);
-    ys = log10(trialsPresented.contast(trials));
+    ys = log10(trialsPresented.contrast(trials));
     plot(xs, ys); hold on
 end
 leg{p.nStaircases+1} = 'prior';
@@ -1213,12 +1278,38 @@ legend(leg);
 nexttile
 for stairI = 1:p.nStaircases
     leg{stairI} = sprintf('staircase #%i', stairI);
-    trials = trialsPresented.staircaseID == stairI;
+    trials = trialsPresented.staircaseIdx == stairI;
     xs = 1:numel(trialsPresented.contrast(trials));
-    ys = trialsPresented.contast(trials);
+    ys = trialsPresented.contrast(trials);
     plot(xs, ys); hold on
 end
 yline(10^p.quest.tGuess, '--');
 xlabel('trial order');
 ylabel('contrast at mean of posterior pdf');
 legend(leg);
+nexttile
+xs = 1:numel(trialsPresented.error);
+ys = rad2deg(trialsPresented.error);
+plot(xs, ys);
+yline(p.threshDegrees, '--');
+xlabel('trial order');
+ylabel('report error (degrees)');
+nexttile
+windowTrials = 10;
+ys = rad2deg(trialsPresented.error);
+for offset = 2:windowTrials
+    ys(offset:end) = ys(offset:end)+(rad2deg(trialsPresented.error(1:(end-offset))));
+end
+ys = ys(windowTrials:end)/windowTrials;
+xs = windowTrials:numel(trialsPresented.error);
+plot(xs, ys);
+yline(p.threshDegrees, '--');
+xlabel('trial order');
+ylabel(sprintf('mean error of last %i trials (deg)', windowTrials));
+
+plotDir = sprintf('%s/plots', subjectDataDir);
+if ~exist(plotDir, 'dir')
+    mkdir(plotDir);
+end
+figureFile = sprintf('data/%s/plots/%s_%s_%s.png', subjectID, subjectID, p.expName, run);
+saveas(threshfig, figureFile, 'png');

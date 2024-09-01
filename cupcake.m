@@ -19,8 +19,9 @@ function cupcake
 subjectID = input('Enter subject ID:  ','s');
 testingLocation = input('Enter testing location (desk, DenBehav):  ','s');
 p.debug = 0; debug = 0; 
-practice = input(['Practice phase: 0/skip-real run \n1-high contrast, free eye movements' ...
-    '\n2-high contrast, enforce fixation \n3-low contrast, enforce fixation:']);
+practice = input(['Practice phase: 0/skip-real run \n1-high contrast, free eye movements, neutral cues' ...
+    '\n2-high contrast, enforce fixation, neutral cues \n3-high contrast, enforce fixation, both cue types' ...
+    '\n4-low contrast, enforce fixation, both cue types:']);
 
 if ~practice
     showInstruct = input('Show instructions? 1-yes 0-no:  ');
@@ -82,16 +83,33 @@ end
 
 if practice == 1
     p.gratingContrasts = 0.8;
-    p.enforceFix = 0;
+    p.enforceFixITI = 0;
     p.eyeTracking = 0;
+    p.triggerEEG = 0;
+    p.photodiode = 0;
+    p.attConds = 0;
 elseif practice == 2
     p.gratingContrasts = 0.8;
-    p.enforceFix = 1;
+    p.enforceFixITI = 1;
+    p.enforceFixCTI = 1;
     p.eyeTracking = 1;    
+    p.triggerEEG = 0;
+    p.photodiode = 0;
+    p.attConds = 0;
 elseif practice == 3
-    p.gratingContrasts = p.gratingContrasts(1);
-    p.enforceFix = 1;
+    p.gratingContrasts = 0.8;
+    p.enforceFixITI = 1;
+    p.enforceFixCTI = 1;
     p.eyeTracking = 1;    
+    p.triggerEEG = 0;
+    p.photodiode = 0;
+elseif practice == 4
+    p.gratingContrasts = p.gratingContrasts(1);
+    p.enforceFixITI = 1;
+    p.enforceFixCTI = 1;
+    p.eyeTracking = 1;    
+    p.triggerEEG = 0;
+    p.photodiode = 0;    
 end
 
 if ~practice
@@ -148,6 +166,9 @@ end
 eyeRad = p.eyeRad*p.ppd; 
 eyeDataDir = 'data/eyedata';
 eyeFile = sprintf('%s_%s', subjectID, run);
+if numel(eyeFile)>8
+    eyeFile = eyeFile(1:8);
+end
 eyeFileFull = sprintf('%s/%s_%s_%s.edf', eyeDataDir, subjectID, p.expName, datestr(now, 'yymmdd'));
 
 % Check to see if this eye file already exists
@@ -293,7 +314,7 @@ if ~resumeDataset
     arcRect = [0 0 2*(ecc+p.arcStroke/2) 2*(ecc+p.arcStroke/2)];
     centeredArcRect = CenterRectOnPointd(arcRect, cx, cy);
     % Att cue rect
-    attRect = [0 0 p.ppd/2*(p.cueLength+p.cueBuffer) p.ppd/2*(p.cueLength+p.cueBuffer)];
+    attRect = [0 0 p.ppd/(p.cueLength+p.cueBuffer) p.ppd/(p.cueLength+p.cueBuffer)];
     centeredAttRect = CenterRectOnPointd(attRect, cx, cy);
     
     % Calculate fixation diameter in pixels
@@ -397,7 +418,7 @@ if p.eyeTracking
         return
     end
     
-    if p.enforceFix
+    if p.enforceFixITI||p.enforceFixCTI
         eyeRad = round(ang2pix(p.eyeRad, p.screenSize(1), p.screenRes(1), p.viewDist, 'central'));
         fixRect = [cx-eyeRad, cy-eyeRad, cx+eyeRad, cy+eyeRad]; 
         % Start recording
@@ -410,45 +431,310 @@ end
 
 %% Instructions and example target
 if p.showInstruct 
-    nInstruct = 4; % change to read number of images
-    Screen('DrawTexture', window, tex{1}, []); % draw stim to prevent delay on 1st trial
-    for iInstruct = 1:nInstruct
-        instructPath = sprintf('images/instruct%d.png',iInstruct);
-        instruct = imread(instructPath);
-        instructTex = Screen('MakeTexture', window, instruct);
-        % scale image
-        [s1, s2, s3] = size(instruct);
-        aspectRatio = s2/s1;
-        heightScaler = 1;
-        imageHeights = rect(4).*heightScaler;
-        imageWidths = imageHeights.*aspectRatio;
-        instructRect = [0 0 imageWidths imageHeights];
-        instructCenterRect = CenterRectOnPointd(instructRect, cx, cy);
-        
-        Screen('DrawTexture', window, instructTex, [], instructCenterRect);
-        Screen('Flip', window);
-        pause(1)
-        
-        keyPressed = 0;
-        while ~keyPressed
-            %             if p.useKbQueue
-            %                 [keyIsDown, firstPress] = KbQueueCheck();
-            %                 keyCode = logical(firstPress);
-            %             else
-            %                 [secs, keyCode] = KbWait(devNum);
-            %             end
-            %
-            %             if strcmp(KbName(keyCode),'1!')
-            %                 keyPressed = 1;
-            %             end
-            [x,y,buttons] = GetMouse(window);
-            if any(buttons)
-                keyPressed = keyPressed+1;
-                break
-            end
+    
+
+    upperTextLocation = 1.9;
+    lowerTextLocation = 1.75;
+    instrRatio = p.instrRatio;
+    pInstr = p;
+    pInstr.ecc = pInstr.ecc*instrRatio;
+
+     %% Practice phase 1 instructions (or normal run with showInstruct on)
+    if practice == 1||practice == 0
+    %% Practice phase 1 first instruction slide      
+    
+    instructText{1} = 'Welcome to the experiment.\nIn this task you will be asked to report the location of a target on a ring.';    
+    instructText{2} = 'Click to continue';
+
+
+    DrawFormattedText(window, instructText{1}, 'center', cy-round(ecc*instrRatio*upperTextLocation), [1 1 1]*white);
+    DrawFormattedText(window, instructText{2}, 'center', cy+round(ecc*instrRatio*lowerTextLocation), [1 1 1]*white);
+    drawCircles(window, pInstr);
+    drawFixation(window, cx, cy, fixSize*instrRatio, p.fixColor*white);
+
+    instrImage = zeros(round(p.ppd* (p.imSize(1)*2*instrRatio) ));    
+    [~, instrGrating] = rd_aperture(instrImage, p.aperture, gratingRadius, edgeWidth);
+    instrGrating = rescale(instrGrating, 0.5-0.5*p.gratingContrasts(1), 0.5+0.5*p.gratingContrasts(1));
+    instrGrating = rd_aperture(instrGrating, 'gaussian', p.gaussianSD*p.ppd, edgeWidth);
+    instrGratingTex = Screen('MakeTexture', window, instrGrating*white);
+    
+    instrTheta = pi/3;
+    instrImRect = floor(CenterRectOnPointd([0 0 size(instrImage)], cx+ecc*cos(instrTheta)*instrRatio, cy+ecc*sin(instrTheta)*instrRatio));
+    Screen('DrawTexture', window, instrGratingTex, [], instrImRect);
+    Screen('Flip', window);
+    keyPressed = 0;
+
+    WaitSecs(0.2);
+
+    while ~keyPressed
+        [x,y,buttons] = GetMouse(window);
+        if any(buttons)
+            keyPressed = keyPressed+1;
+            break
         end
     end
+
+    %% Practice phase 1 second instruction slide
+    keyPressed = 0;
+    instructText{1} = 'To do so, you will move a circle to your\nbest guess of the center of the target.\nWhen you click to submit your guess, the circle will turn black.';    
+    instructText{2} = 'Click to continue';
+
+    DrawFormattedText(window, instructText{1}, 'center', cy-round(ecc*instrRatio*upperTextLocation), [1 1 1]*white);
+    DrawFormattedText(window, instructText{2}, 'center', cy+round(ecc*instrRatio*lowerTextLocation), [1 1 1]*white);
+    
+    rectSize = instrRatio * p.responseDotDiameter * p.ppd;
+    instrResponseRect = CenterRectOnPointd([0 0 rectSize rectSize], cx+ecc*cos(instrTheta)*instrRatio, cy+ecc*sin(instrTheta)*instrRatio);
+    drawCircles(window, pInstr);
+    drawFixation(window, cx, cy, fixSize*instrRatio, p.fixColor*white);
+    
+    Screen('FillOval', window, p.estimationColorActive, instrResponseRect);
+    keyPressed = 0;
+    Screen('Flip', window);
+
+    WaitSecs(0.2);
+
+    while ~keyPressed
+        [x,y,buttons] = GetMouse(window);
+        if any(buttons)
+            keyPressed = keyPressed+1;
+            break
+        end
+    end    
+
+    %% Practice phase 1 third instruction slide
+    keyPressed = 0;
+    instructText{1} = ['Next, you will draw an arc indicating your\nuncertainty about your position guess.' ...
+        '\nMoving the mouse right grows the arc,\n and moving the mouse left shrinks the arc.'];
+    instructText{2} = 'Click to continue';
+
+    instrArcAngle = 35;
+    instrCenteredArcRect = CenterRectOnPointd(instrRatio*arcRect, cx, cy);
+    
+    DrawFormattedText(window, instructText{1}, 'center', cy-round(ecc*instrRatio*upperTextLocation), [1 1 1]*white);
+    DrawFormattedText(window, instructText{2}, 'center', cy+round(ecc*instrRatio*lowerTextLocation), [1 1 1]*white);
+
+    drawCircles(window, pInstr);
+    drawFixation(window, cx, cy, fixSize*instrRatio, p.fixColor*white);
+    
+    Screen('FillOval', window, p.estimationColorSubmit, instrResponseRect);
+    Screen('FrameArc',window, p.arcColorActive, instrCenteredArcRect, ...
+        rad2deg(instrTheta)+90-instrArcAngle/2, instrArcAngle, p.arcStroke*instrRatio, p.arcStroke*instrRatio);
+    keyPressed = 0;
+    Screen('Flip', window);
+
+    WaitSecs(0.2);
+
+    while ~keyPressed
+        [x,y,buttons] = GetMouse(window);
+        if any(buttons)
+            keyPressed = keyPressed+1;
+            break
+        end
+    end
+    
+    %% Practice Phase 1 fourth instructions slide
+    keyPressed = 0;
+    instructText{1} = ['Your goal is to make the arc as small as possible\nwhile keeping the target''s center within the arc.' ...
+        '\nYou will earn more points the smaller the arc is, as shown by the graph below,\nbut you will earn no points if the arc misses the target.']  ;
+    instructText{2} = 'Click to continue';    
+
+    DrawFormattedText(window, instructText{1}, 'center', cy-round(ecc*instrRatio*upperTextLocation), [1 1 1]*white);
+    DrawFormattedText(window, instructText{2}, 'center', cy+round(ecc*instrRatio*lowerTextLocation), [1 1 1]*white);
+   
+    graphHeight = round(8*p.ppd);
+    graphWidth = round(12*p.ppd);
+    pointsGraph = figure('Visible', 'off', 'Position', [0 0 graphWidth, graphHeight]); clf; set(0, 'CurrentFigure', pointsGraph);
+    xs = 0:60;
+    ys = 100*exp(-p.points*xs);
+     plot(xs, ys ,'w');
+    xlabel('arc length (degrees)');
+    ylabel('possible points earned');
+   set(gcf, 'Color', p.backgroundColor*[1 1 1]);
+    set(gca, 'XColor', [1 1 1], 'YColor', [1 1 1]);
+    set(gca, 'Color', p.backgroundColor*[1 1 1]);
+
+    pointsGraphFrame = getframe(pointsGraph);
+    graphImage = pointsGraphFrame.cdata;
+    graphTex = Screen('MakeTexture', window, graphImage);
+    Screen('DrawTexture', window, graphTex);
+    keyPressed = 0;
+    Screen('Flip', window);
+
+    WaitSecs(0.2);
+
+    while ~keyPressed
+        [x,y,buttons] = GetMouse(window);
+        if any(buttons)
+            keyPressed = keyPressed+1;
+            break
+        end
+    end
+
+    %% Practice phase 2 instructions (enforce fixation)
+    elseif practice == 2
+    %% Practice phase 2 first instructions slide
+    keyPressed = 0;
+    instructText{1} = ['It is important that you keep your eyes\nfixed on the dot at the center of the screen\n' ...
+        'when the target appears. In this practice\nthe target will not appear until you fixate on the center.'];
+    instructText{2} = 'Click to continue';
+
+    DrawFormattedText(window, instructText{1}, 'center', cy-round(ecc*instrRatio*upperTextLocation), [1 1 1]*white);
+    DrawFormattedText(window, instructText{2}, 'center', cy+round(ecc*instrRatio*lowerTextLocation), [1 1 1]*white);
+
+    drawCircles(window, pInstr);
+    drawFixation(window, cx, cy, fixSize*instrRatio, p.fixColor*white);
+    
+    Screen('Flip', window);
+
+    WaitSecs(0.2);
+
+    while ~keyPressed
+        [x,y,buttons] = GetMouse(window);
+        if any(buttons)
+            keyPressed = keyPressed+1;
+            break
+        end
+    end
+
+    elseif practice==3
+    %% Practice phase 3 instructions
+    %% Practice phase 3 first instruction slide
+    keyPressed = 0;
+    instructText{1} = ['On previous practices, the target has been preceded by\na circle surrounding the central dot.\n' ...
+        'this is a neutral cue meaning the target is equally\nlikely to appear at any location around the circle.'];
+    instructText{2} = 'Click to continue';
+
+    DrawFormattedText(window, instructText{1}, 'center', cy-round(ecc*instrRatio*upperTextLocation), [1 1 1]*white);
+    DrawFormattedText(window, instructText{2}, 'center', cy+round(ecc*instrRatio*lowerTextLocation), [1 1 1]*white);
+
+    drawCircles(window, pInstr);
+    drawFixation(window, cx, cy, fixSize*instrRatio, p.fixColor*white);
+
+    instrAttRect = [0 0 p.ppd/(p.cueLength+p.cueBuffer)*instrRatio p.ppd/(p.cueLength+p.cueBuffer)*instrRatio];
+    instrCenteredAttRect = CenterRectOnPointd(instrAttRect, cx, cy);
+
+    Screen('FrameOval', window, white, instrCenteredAttRect, p.strokeWidth); % 
+    
+    Screen('Flip', window);
+
+    WaitSecs(0.2);
+
+    while ~keyPressed
+        [x,y,buttons] = GetMouse(window);
+        if any(buttons)
+            keyPressed = keyPressed+1;
+            break
+        end
+    end   
+
+    %% Practice phase 3 second instruction slide
+
+    keyPressed = 0;
+    instructText{1} = 'In this practice, on some trials, a directional cue instead of a neutral cue\nwill appear at the center of the screen before the target appears.';
+    instructText{2} = 'Click to continue';
+
+    DrawFormattedText(window, instructText{1}, 'center', cy-round(ecc*instrRatio*upperTextLocation), [1 1 1]*white);
+    DrawFormattedText(window, instructText{2}, 'center', cy+round(ecc*instrRatio*lowerTextLocation), [1 1 1]*white);
+
+    drawCircles(window, pInstr);
+    drawFixation(window, cx, cy, fixSize*instrRatio, p.fixColor*white);
+
+    instrCueTheta = pi/3.8;
+    Screen('DrawLine', window, white, cx + p.cueBuffer*p.ppd*cosd(instrCueTheta), cy + p.cueBuffer*p.ppd*sind(instrCueTheta),...
+        cx + p.cueLength*p.ppd*cosd(instrCueTheta)*instrRatio, cy + p.cueLength*p.ppd*sind(instrCueTheta)*instrRatio, p.strokeWidth);
+    
+    Screen('Flip', window);
+
+    WaitSecs(0.2);
+
+    while ~keyPressed
+        [x,y,buttons] = GetMouse(window);
+        if any(buttons)
+            keyPressed = keyPressed+1;
+            break
+        end
+    end   
+
+    %% Practice phase 3 third instruction slide
+
+    keyPressed = 0;
+    instructText{1} = ['The directional cue will roughly point towards\nthe target''s location, and it will usually be off by a small amount,\n' ...
+        'but sometimes it will be off by a larger amount.\nThe distance between the cued direction and the target location follows\na distribution shown by the graph below.'];
+    instructText{2} = 'Click to continue';
+
+    DrawFormattedText(window, instructText{1}, 'center', cy-round(ecc*instrRatio*upperTextLocation), [1 1 1]*white);
+    DrawFormattedText(window, instructText{2}, 'center', cy+round(ecc*instrRatio*lowerTextLocation), [1 1 1]*white);
+
+    graphHeight = round(8*p.ppd);
+    graphWidth = round(12*p.ppd);
+    offsetGraph = figure('Visible', 'off', 'Position', [0 0 graphWidth, graphHeight]); clf; set(0, 'CurrentFigure', offsetGraph);
+    xs = -20:20;
+    ys = normpdf(xs,0,p.sigma);
+    plot(xs, ys ,'w');
+    xlabel('distance between cued location and target location (degrees)');
+    ylabel('probability');
+    set(gcf, 'Color', p.backgroundColor*[1 1 1]);
+    set(gca, 'XColor', [1 1 1], 'YColor', [1 1 1]);
+    set(gca, 'Color', p.backgroundColor*[1 1 1]);
+
+    offsetGraphFrame = getframe(offsetGraph);
+    graphImage = offsetGraphFrame.cdata;
+    graphTex = Screen('MakeTexture', window, graphImage);
+    Screen('DrawTexture', window, graphTex);
+    Screen('Flip', window);
+
+    WaitSecs(0.2);
+
+    while ~keyPressed
+        [x,y,buttons] = GetMouse(window);
+        if any(buttons)
+            keyPressed = keyPressed+1;
+            break
+        end
+    end       
+
+    elseif practice == 4
+    %% Practice phase 4 instructions
+    %% Practice phase 4 first instruction slide
+
+    keyPressed = 0;
+    instructText{1} = ['In this practice, in order to make the task difficult, the contrast of\nthe target will be lower than it was in previous practices.' ...
+        'You may not always spot the target, in which case you should guess randomly\nor use the directional cue to make a best guess if possible.'];
+    instructText{2} = 'Click to continue';
+
+    DrawFormattedText(window, instructText{1}, 'center', cy-round(ecc*instrRatio*upperTextLocation), [1 1 1]*white);
+    DrawFormattedText(window, instructText{2}, 'center', cy+round(ecc*instrRatio*lowerTextLocation), [1 1 1]*white);
+
+    drawCircles(window, pInstr);
+    drawFixation(window, cx, cy, fixSize*instrRatio, p.fixColor*white);
+
+        instrImage = zeros(round(p.ppd* (p.imSize(1)*2*instrRatio) ));    
+    [~, instrGrating] = rd_aperture(instrImage, p.aperture, gratingRadius, edgeWidth);
+    instrGrating = rescale(instrGrating, 0.5-0.5*p.gratingContrasts(1), 0.5+0.5*p.gratingContrasts(1));
+    instrGrating = rd_aperture(instrGrating, 'gaussian', p.gaussianSD*p.ppd, edgeWidth);
+    instrGratingTex = Screen('MakeTexture', window, instrGrating*white);
+
+    instrTheta = pi/3;
+    instrImRect = floor(CenterRectOnPointd([0 0 size(instrImage)], cx+ecc*cos(instrTheta)*instrRatio, cy+ecc*sin(instrTheta)*instrRatio));
+    Screen('DrawTexture', window, instrGratingTex, [], instrImRect);  
+
+   Screen('Flip', window);
+
+    WaitSecs(0.2);
+
+    while ~keyPressed
+        [x,y,buttons] = GetMouse(window);
+        if any(buttons)
+            keyPressed = keyPressed+1;
+            break
+        end
+    end  
+
+
+    end
 end
+
+
 
 % Begin screen
 DrawFormattedText(window, 'Have fun!', 'center', cy-round(3*p.ppd), [1 1 1]*white);
@@ -595,7 +881,7 @@ for iTrial = trialIdx:nTrials
 
     % ___________________________________________________________________
     % Cue
-    if trials(iTrial,attIdx)==1 % att valid
+    if p.attConds(trials(iTrial,attIdx))==1 % att valid
         % randomly generate cue angle from gaussian
         cueThetaRnd = normrnd(thetaDeg, p.sigma, [1,1]); % from normal distribution (in deg) 
         % rescale angle to 0-360 space
@@ -611,7 +897,7 @@ for iTrial = trialIdx:nTrials
         cueTheta = NaN;
     end
     
-    if trials(iTrial,attIdx)==1 % att valid 
+    if p.attConds(trials(iTrial,attIdx))==1 % att valid 
         % draw valid cue 
         Screen('DrawLine', window, white, cx + p.cueBuffer*p.ppd*cosd(cueTheta), cy + p.cueBuffer*p.ppd*sind(cueTheta),...
             cx + p.cueLength*p.ppd*cosd(cueTheta), cy + p.cueLength*p.ppd*sind(cueTheta), p.strokeWidth);
@@ -656,6 +942,7 @@ for iTrial = trialIdx:nTrials
     if p.eyeTracking
         Eyelink('Message', 'EVENT_FIX2');
     end
+
     
     % ___________________________________________________________________
     % TARGET IMAGE 
@@ -681,6 +968,31 @@ for iTrial = trialIdx:nTrials
     if p.photodiode % strcmp(p.testingLocation,'MEG')
         drawPhotodiode(window, [cx cy]*2, p.photodiodeColors(1), 0); % alternate black and white
     end
+
+    %% Check fixation before presenting target
+    isFix = 0;
+    if p.enforceFixCTI
+        eyeSlack_min = p.eyeSlacks(rd_sampleDiscretePDF(p.eyeSlackPDF, 1, 5));
+    else
+        eyeSlack_min = 0;
+    end
+    eyeSlack = 0;
+
+    while ~isFix||GetSecs<timeFix2 + p.fix2Dur + fixTargetISI - 2*p.slack
+        if p.enforceFixCTI
+            isFix = rd_eyeLink('fixcheck', window, {cx, cy, eyeRad});
+            if ~isFix
+                remain = timeFix2 + p.fix2Dur + fixTargetISI - 2*p.slack - GetSecs + eyeSlack;
+                if remain < eyeSlack_min
+                    eyeSlack = eyeSlack_min-remain;
+                end
+            end
+        else
+            isFix = 1;
+        end
+    end
+
+
     timeTarget = Screen('Flip', window, timeFix2 + p.fix2Dur + fixTargetISI - p.slack);
 
     if p.triggersOn
@@ -1014,20 +1326,20 @@ for iTrial = trialIdx:nTrials
 
     %check fixation during ITI before continuing
     isFix = 0;
-    if p.enforceFix
-        eyeSlack_min = p.eyeSlacks(rd_sampleDiscretePDF(p.eyeSlackPDF, 1));
+    if p.enforceFixITI
+        eyeSlack_min = p.eyeSlacks(rd_sampleDiscretePDF(p.eyeSlackPDF, 1, 5));
     else
         eyeSlack_min = 0;
     end
     eyeSlack = 0;
 
-    while ~isFix||getSecs<timeITIstart+iti-p.slack+eyeSlack
-        if p.enforceFix
+    while ~isFix||GetSecs<timeITIstart+iti-2*p.slack+eyeSlack
+        if p.enforceFixITI
             isFix = rd_eyeLink('fixcheck', window, {cx, cy, eyeRad});
             if ~isFix
-                remain = timeITIstart + iti - p.slack - GetSecs + eyeSlack;
+                remain = timeITIstart + iti - 2*p.slack - GetSecs + eyeSlack;
                 if remain < eyeSlack_min
-                    eyeSlack = eyeSlack_max-remain;
+                    eyeSlack = eyeSlack_min-remain;
                 end
             end
         else
@@ -1052,7 +1364,7 @@ for iTrial = trialIdx:nTrials
     trialsPresented.fixTargetISIIdx(iTrial) = trials(iTrial,fixTargetISIIdx); 
     trialsPresented.fixTargetISI(iTrial) = p.fixTargetISIs(trials(iTrial,fixTargetISIIdx)); 
     
-    trialsPresented.att(iTrial) = trials(iTrial,attIdx); % 1 valid, 0 neutral 
+    trialsPresented.att(iTrial) = p.attConds(trials(iTrial,attIdx)); % 1 valid, 0 neutral 
     
     trialsPresented.contrast(iTrial) = p.gratingContrasts(trials(iTrial, contrastIdx)); 
     trialsPresented.sf(iTrial) = sf; 
