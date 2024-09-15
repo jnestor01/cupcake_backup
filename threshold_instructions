@@ -1,0 +1,60 @@
+
+   keyPressed = 0;
+    instructText{1} = ['In this thresholding procedure, we will gradually increment\nthe difficulty of the task by adjusting the contrast of the target.\n' ...
+        'For thresholding, you will only use the dot to estimate the location of the target,\nyou will not have to use the arc as you did in the practice.'];
+    instructText{2} = 'Click to continue';
+
+    DrawFormattedText(window, instructText{1}, 'center', cy-round(ecc*instrRatio*upperTextLocation), [1 1 1]*white);
+    DrawFormattedText(window, instructText{2}, 'center', cy+round(ecc*instrRatio*lowerTextLocation), [1 1 1]*white);
+
+    drawCircles(window, pInstr);
+    drawFixation(window, cx, cy, fixSize*instrRatio, p.fixColor*white);
+
+        instrImage = zeros(round(p.ppd* (p.imSize(1)*2*instrRatio) ));    
+    [~, instrGrating] = rd_aperture(instrImage, p.aperture, gratingRadius, edgeWidth);
+    instrGrating = rescale(instrGrating, 0.5-0.5*p.gratingContrasts(1), 0.5+0.5*p.gratingContrasts(1));
+    instrGrating = rd_aperture(instrGrating, 'gaussian', p.gaussianSD*p.ppd, edgeWidth);
+    instrGratingTex = Screen('MakeTexture', window, instrGrating*white);
+
+    instrTheta = pi/3;
+    instrImRect = floor(CenterRectOnPointd([0 0 size(instrImage)], cx+ecc*cos(instrTheta)*instrRatio, cy+ecc*sin(instrTheta)*instrRatio));
+    Screen('DrawTexture', window, instrGratingTex, [], instrImRect);  
+
+   Screen('Flip', window);
+
+    WaitSecs(0.2);
+
+    while ~keyPressed
+        [x,y,buttons] = GetMouse(window);
+        if any(buttons)
+            keyPressed = keyPressed+1;
+            break
+        end
+    end  
+
+     keyPressed = 0;
+    instructText{1} = ['For thresholding, every trial will have the directional cue.\nRemember that if you don''t see the target on a trial\n' ...
+        'it is okay to use the directional cue to make a best guess.'];
+    instructText{2} = 'Click to continue';
+
+    DrawFormattedText(window, instructText{1}, 'center', cy-round(ecc*instrRatio*upperTextLocation), [1 1 1]*white);
+    DrawFormattedText(window, instructText{2}, 'center', cy+round(ecc*instrRatio*lowerTextLocation), [1 1 1]*white);
+
+    drawCircles(window, pInstr);
+    drawFixation(window, cx, cy, fixSize*instrRatio, p.fixColor*white);
+
+    instrCueTheta = pi/3.8;
+    Screen('DrawLine', window, white, cx + p.cueBuffer*p.ppd*cosd(instrCueTheta), cy + p.cueBuffer*p.ppd*sind(instrCueTheta),...
+        cx + p.cueLength*p.ppd*cosd(instrCueTheta)*instrRatio, cy + p.cueLength*p.ppd*sind(instrCueTheta)*instrRatio, p.strokeWidth);
+
+   Screen('Flip', window);
+
+    WaitSecs(0.2);
+
+    while ~keyPressed
+        [x,y,buttons] = GetMouse(window);
+        if any(buttons)
+            keyPressed = keyPressed+1;
+            break
+        end
+    end  
